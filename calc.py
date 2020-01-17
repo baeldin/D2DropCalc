@@ -27,10 +27,12 @@ def read_item_lists():
 			code_to_name_dict[item['code']] = item['*name']+" Decal"
 		elif 'UnID Scroll' in item['name']:
 			code_to_name_dict[item['code']] = item['name'].replace('UnID ','')
-		elif 'Ring' in item['name']:
+		elif 'Ring' in item['name'] and item['name'] != 'Ring':
 			code_to_name_dict[item['code']] = item['*name']+" (class ring)"
-		elif 'Amulet' in item['name']:
+		elif 'Amulet' in item['name']and item['name'] != 'Amulet':
 			code_to_name_dict[item['code']] = item['*name']+" (class amulet)"
+		elif item['name'] == 'DragonStone':
+			code_to_name_dict[item['code']] = 'Dragon Stone'
 		else:
 			code_to_name_dict[item['code']] = item['name']
 	# add no drop and arrows/bolts
@@ -47,11 +49,6 @@ def merge_dicts(dict_a, dict_b):
 		else:
 			dict_a[key] = value
 	return dict_a
-
-da = {'one': 3, 'two': 5, 'four': 7}
-db = {'one': 2, 'three': 8, 'four': 3}
-
-print(merge_dicts(da, db))
 
 
 def get_level_subdict(df, level, prob):
@@ -135,23 +132,21 @@ def tc_get_prob_dict(data, index, call_prob=1.):
 	picks = data.at[idx,'Picks']
 	multiplier = 1.
 	total_prob = tc_total_probability(data, index)
-	print("Picks is {:d}".format(picks))
 	if not np.isnan(data.at[idx, 'NoDrop']) and picks > 0:
 		prob_dict['NoDrop'] = data.at[idx, 'NoDrop']/total_prob*call_prob
 	for ii in range(1,11):
 		tmp_mini_dict = {}
-		if not np.isnan(data.at[idx,'Prob'+str(ii)]):
-			if picks > 0:
-				tmp_mini_dict[data.at[idx, 'Item'+str(ii)]] = data.at[idx,'Prob'+str(ii)]/total_prob*call_prob*picks
-			elif picks < 0:
-				tmp_mini_dict[data.at[idx, 'Item'+str(ii)]] = 1.*call_prob
-			elif picks == 0:
-				return {'NoDrop': 1.}
-			print(prob_dict)
-			print("merging...")
-			prob_dict = merge_dicts(prob_dict, tmp_mini_dict)
-			print(prob_dict)
-	print("returning...")
+		if data.at[idx, 'Item'+str(ii)] == 'Nothing':
+			tmp_mini_dict = {'NoDrop': data.at[idx,'Prob'+str(ii)]/total_prob*call_prob*picks}
+		else:
+			if not np.isnan(data.at[idx,'Prob'+str(ii)]):
+				if picks > 0:
+					tmp_mini_dict[data.at[idx, 'Item'+str(ii)]] = data.at[idx,'Prob'+str(ii)]/total_prob*call_prob*picks
+				elif picks < 0:
+					tmp_mini_dict[data.at[idx, 'Item'+str(ii)]] = 1.*call_prob
+				elif picks == 0:
+					return {'NoDrop': 1.}
+		prob_dict = merge_dicts(prob_dict, tmp_mini_dict)
 	return prob_dict
 
 
@@ -162,17 +157,10 @@ def tc_unravel(prob_dict, data, diag_dict = False, tc_nam='None', call_prob=1.):
 		# print("checking "+tc_to_check)
 		if (data['Treasure Class'] == tc_to_check).any():
 			# print("yes")
-			tmp_dict = tc_unravel(tc_get_prob_dict(data, tc_to_check, call_prob=prob), data, tc_nam=tc_to_check, call_prob=prob)
-			print("tmp_dict is now")
-			print(tmp_dict)
+			tmp_dict = tc_unravel(tc_get_prob_dict(data, tc_to_check, call_prob=prob), data, diag_dict=diag_dict, tc_nam=tc_to_check, call_prob=prob)
 			# print(tmp_dict)
 			if tmp_dict is not None:
-				print("before merge")
-				print(new_dict)
-				print(tmp_dict)
 				new_dict = merge_dicts(new_dict, tmp_dict)
-				print("after merge")
-				print(new_dict)
 		else:
 			new_dict = merge_dicts(new_dict, {tc_to_check: prob})
 	if diag_dict:
@@ -183,9 +171,9 @@ def main():
 	data = read_TreasurClassEx()
 	blah = data[data['Treasure Class']=='Potion 7']
 	code_to_name_dict = read_item_lists()
-	prob_dict = tc_get_prob_dict(data, 'DDD1')
+	prob_dict = tc_get_prob_dict(data, 'Andariel (N)')
 	# print(prob_dict)
-	totals = tc_unravel(prob_dict, data, diag_dict=True)
+	totals = tc_unravel(prob_dict, data, diag_dict=False)
 	totals = split_weap_and_armo(totals)
 	chance_sum = 0.
 	# print("========== FINAL RESULT ===========")
@@ -198,7 +186,9 @@ def main():
 			# print("{:s}\t {:11.9f}".format('(UNNAMED)'+key, totals[key]))
 			print("{:s}\t {:11.9f}".format(key, totals[key]))
 		chance_sum += totals[key]
+	print('______________________________')
 	print("total: "+str(chance_sum))
+	print("No Drop: "+str(totals['NoDrop']))
 
 
 if __name__ == '__main__':
