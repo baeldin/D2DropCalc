@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from collections import Counter 
+
 
 def read_TreasurClassEx():
 	with open('TreasureClassEx.txt','r') as f:
@@ -33,11 +33,25 @@ def read_item_lists():
 			code_to_name_dict[item['code']] = item['*name']+" (class amulet)"
 		else:
 			code_to_name_dict[item['code']] = item['name']
-	# add no drop
+	# add no drop and arrows/bolts
 	code_to_name_dict['NoDrop'] = "No Drop"
 	code_to_name_dict['aq2'] = "Arrows"
 	code_to_name_dict['cq2'] = "Bolts"
 	return code_to_name_dict
+
+
+def merge_dicts(dict_a, dict_b):
+	for key, value in dict_b.items():
+		if key in dict_a:
+			dict_a[key] = dict_a[key] + value
+		else:
+			dict_a[key] = value
+	return dict_a
+
+da = {'one': 3, 'two': 5, 'four': 7}
+db = {'one': 2, 'three': 8, 'four': 3}
+
+print(merge_dicts(da, db))
 
 
 def get_level_subdict(df, level, prob):
@@ -63,16 +77,38 @@ def split_weap_and_armo(drop_dict):
 		if 'weap' in key:
 			level = int(key.replace('weap',''))
 			split_dict = get_level_subdict(df_weapons, level, value)
-			return_dict = Counter(return_dict) + Counter(split_dict)
+			return_dict = merge_dicts(return_dict, split_dict)
 		elif 'armo' in key:
 			level = int(key.replace('armo',''))
 			split_dict = get_level_subdict(df_armor, level, value)
-			return_dict = Counter(return_dict) + Counter(split_dict)
+			return_dict = merge_dicts(return_dict, split_dict)
 		else:
 			return_dict[key] = drop_dict[key]
 	# for key, value in return_dict.items():
 	# 	print("{:s}: {:11.9f}".format(key, value))
 	return return_dict
+
+
+def diag_dict_print(new_dict, prob_dict, call_prob, tc_nam):
+		print("========== BEFORE UNRAVELLING ========")
+		print("We are in tc {:s}, the chance to end up here was {:11.9f}".format(
+			tc_nam, call_prob))
+		print("contents of new_dict in tc_untravel():")
+		chance_sum = 0.
+		for key, value in prob_dict.items():
+			print("{:s}: {:11.9f}% ({:11.9f}% within {:s})".format(
+				key, value*100, value/call_prob*100, tc_nam))
+			chance_sum += value
+		print("========== AFTER UNRAVELLING =========")
+		print("We are in tc {:s}, the chance to end up here was {:11.9f}".format(
+			tc_nam, call_prob))
+		print("contents of new_dict in tc_untravel():")
+		chance_sum = 0.
+		for key, value in new_dict.items():
+			print("{:s}: {:11.9f}% ({:11.9f}% within {:s})".format(
+				key, value*100, value/call_prob*100, tc_nam))
+			chance_sum += value
+		print("total: "+str(chance_sum))
 
 
 def data_index(data, index):
@@ -99,16 +135,23 @@ def tc_get_prob_dict(data, index, call_prob=1.):
 	picks = data.at[idx,'Picks']
 	multiplier = 1.
 	total_prob = tc_total_probability(data, index)
-	if not np.isnan(data.at[idx, 'NoDrop']):
+	print("Picks is {:d}".format(picks))
+	if not np.isnan(data.at[idx, 'NoDrop']) and picks > 0:
 		prob_dict['NoDrop'] = data.at[idx, 'NoDrop']/total_prob*call_prob
 	for ii in range(1,11):
+		tmp_mini_dict = {}
 		if not np.isnan(data.at[idx,'Prob'+str(ii)]):
 			if picks > 0:
-				prob_dict[data.at[idx, 'Item'+str(ii)]] = data.at[idx,'Prob'+str(ii)]/total_prob*call_prob*picks
+				tmp_mini_dict[data.at[idx, 'Item'+str(ii)]] = data.at[idx,'Prob'+str(ii)]/total_prob*call_prob*picks
 			elif picks < 0:
-				prob_dict[data.at[idx, 'Item'+str(ii)]] = 1.*call_prob
+				tmp_mini_dict[data.at[idx, 'Item'+str(ii)]] = 1.*call_prob
 			elif picks == 0:
-				return {}
+				return {'NoDrop': 1.}
+			print(prob_dict)
+			print("merging...")
+			prob_dict = merge_dicts(prob_dict, tmp_mini_dict)
+			print(prob_dict)
+	print("returning...")
 	return prob_dict
 
 
@@ -120,46 +163,29 @@ def tc_unravel(prob_dict, data, diag_dict = False, tc_nam='None', call_prob=1.):
 		if (data['Treasure Class'] == tc_to_check).any():
 			# print("yes")
 			tmp_dict = tc_unravel(tc_get_prob_dict(data, tc_to_check, call_prob=prob), data, tc_nam=tc_to_check, call_prob=prob)
+			print("tmp_dict is now")
+			print(tmp_dict)
 			# print(tmp_dict)
 			if tmp_dict is not None:
-				new_dict = Counter(new_dict) + Counter(tmp_dict)
-				# for key in tmp_dict:
-				# 	new_dict[key] = tmp_dict[key]
+				print("before merge")
+				print(new_dict)
+				print(tmp_dict)
+				new_dict = merge_dicts(new_dict, tmp_dict)
+				print("after merge")
+				print(new_dict)
 		else:
-			# print("no")
-			new_dict[tc_to_check] = prob
+			new_dict = merge_dicts(new_dict, {tc_to_check: prob})
 	if diag_dict:
-
-		print("========== BEFORE UNRAVELLING ========")
-		print("We are in tc {:s}, the chance to end up here was {:11.9f}".format(
-			tc_nam, call_prob))
-		print("contents of new_dict in tc_untravel():")
-		chance_sum = 0.
-		for key, value in prob_dict.items():
-			print("{:s}: {:11.9f}% ({:11.9f}% within {:s})".format(
-				key, value*100, value/call_prob*100, tc_nam))
-			chance_sum += value
-		print("========== AFTER UNRAVELLING =========")
-		print("We are in tc {:s}, the chance to end up here was {:11.9f}".format(
-			tc_nam, call_prob))
-		print("contents of new_dict in tc_untravel():")
-		chance_sum = 0.
-		for key, value in new_dict.items():
-			print("{:s}: {:11.9f}% ({:11.9f}% within {:s})".format(
-				key, value*100, value/call_prob*100, tc_nam))
-			chance_sum += value
-		print("total: "+str(chance_sum))
-
+		diag_dict_print(new_dict, prob_dict, call_prob, tc_nam)
 	return new_dict
-
 
 def main():
 	data = read_TreasurClassEx()
 	blah = data[data['Treasure Class']=='Potion 7']
 	code_to_name_dict = read_item_lists()
-	prob_dict = tc_get_prob_dict(data, 'A5C Book (H)')
+	prob_dict = tc_get_prob_dict(data, 'DDD1')
 	# print(prob_dict)
-	totals = tc_unravel(prob_dict, data)
+	totals = tc_unravel(prob_dict, data, diag_dict=True)
 	totals = split_weap_and_armo(totals)
 	chance_sum = 0.
 	# print("========== FINAL RESULT ===========")
