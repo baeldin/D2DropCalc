@@ -1,0 +1,74 @@
+String Index	Text
+	
+	
+	
+	
+Echo Chamber	Perfect Cell's Memorial
+To The Echo Chamber	To Perfect Cell's Memorial
+To The Glacier Caves Level 2	To Tsuru's Memorial
+Glacial Caves Level 2	Tsuru's Memorial
+ModStrcurseresist	Reduces Curse Length by
+ModStrMinion	additional Minion
+ModStrTrap	additional Trap
+ModStrCorrupt	ÿc1*** Corrupted (Equipment) ***
+increaseswithkill	based on Total Kills
+maxlvl	Maximum Skill Level Increased by
+Hellfire Torch	Hellfire Torch
+Narzath	Narzath's Notorious B.F.C
+Hidden Treasure 2	Hidden Treasure 
+Hidden Treasure 3	Hidden Treasure 
+Hidden Treasure 4	Hidden Treasure 
+Hidden Treasure 5	Hidden Treasure 
+Hidden Treasure 6	Hidden Treasure 
+Hidden Treasure 7	Hidden Treasure 
+Hidden Treasure 8	Hidden Treasure 
+Rainbow Facet 1	Rainbow Facet 
+Rainbow Facet 2	Rainbow Facet 
+Rainbow Facet 3	Rainbow Facet 
+Rainbow Facet 4	Rainbow Facet 
+Rainbow Facet 5	Rainbow Facet 
+Rainbow Facet 6	Rainbow Facet 
+Rainbow Facet 7	Rainbow Facet 
+Rainbow Facet 8	Rainbow Facet 
+Tinker	Tinker Points Left
+11143	Merc Only
+of Decrepification	of Decrepification
+of lowered Resistance	of lowered Resistance
+of Flesh and Bone	of Flesh and Bone
+Warrior's	Warrior's
+Rogue's	Rogue's
+Highlander's	Highlander's
+Mage's	Mage's
+dy21	Undye
+dy1	Lightgrey Dye
+dy2	Darkgrey Dye
+dy3	Black Dye
+dy4	Lightblue Dye
+dy5	Darkblue Dye
+dy6	Crystalblue Dye
+dy7	Lightred Dye
+dy8	Darkred Dye
+dy9	Crystalred Dye
+dy10	Lightgreen Dye
+dy11	Darkgreen Dye
+dy12	Crystalgreen Dye
+dy13	Lightyellow Dye
+dy14	Darkyellow Dye
+dy15	Lightgold Dye
+dy16	Darkgold Dye
+dy17	Lightpurple Dye
+dy18	Darkpurple Dye
+dy19	Orange Dye
+dy20	Brightwhite Dye
+kills	Monsters killed
+Killcounter of Strength	Killcounter of Strength
+ModStrrep1	Replenishes %d Quantity in %d Frames
+of Splash	of Splash
+Skillname453	Splash Damage
+healkillStr	%d%% of Life Replenished on Kill
+Killcounter of Dexterity	Killcounter of Dexterity
+Killcounter of Vitality	Killcounter of Vitality
+Killcounter of Energy	Killcounter of Energy
+ModStrrep2	Replenishes %d Durability  in %d Frames
+cooldowndesc	Castdelay for 
+hydramagdmg	Hydra Magic Damage: 
