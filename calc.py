@@ -10,7 +10,7 @@ def read_TreasurClassEx():
 
 
 def read_monstats():
-    with open('Monstats.txt') as f:
+    with open('MonStats.txt') as f:
         df = pd.read_csv(f, sep='\t')
     return df
 
@@ -67,8 +67,10 @@ def read_item_lists():
 
 
 
-def print_results_to_txt(totals, code_to_name_dict, filenam='out.txt'):
+def print_results_to_txt(totals, code_to_name_dict, monster_name, filenam='out.txt'):
     with open('Results/'+filenam, 'w') as f:
+        f.write("{:s}\n".format(monster_name))
+        f.write("Item\tChance\n")
         chance_sum = 0.
         for key in sorted(totals.keys()):
             try:
@@ -158,6 +160,22 @@ def data_index(data, index):
         return index
 
 
+def get_corrected_nodrop(data, index, total_probability, nplayers=0):
+    # N=int(1+AdditionalPlayers/2+ClosePartiedPlayers/2)
+    # int( ProbSum/(1/((NoDrop/(NoDrop+ProbSum))^N)-1) )
+    base_nodrop = data.at[index, 'NoDrop']
+    if not np.isnan(base_nodrop) and not base_nodrop == 0:
+        N=int(1+nplayers)
+        # print("base_nodrop = {:3.0f}".format(base_nodrop))
+        # print("base_nodrop+total_probability = {:3.0f}".format(base_nodrop+total_probability))
+        # print("((base_nodrop/(base_nodrop+total_probability))**N) = {:6.4f}".format(((base_nodrop/(base_nodrop+total_probability))**N)))
+        # print("(1/((base_nodrop/(base_nodrop+total_probability))**N)-1) = {:6.4f}".format((1/((base_nodrop/(base_nodrop+total_probability))**N)-1)))
+        corrected_nodrop = int(total_probability/(1/((base_nodrop/(base_nodrop+total_probability))**N)-1))
+        return corrected_nodrop
+    else:
+        return 0
+
+
 def tc_total_probability(data, index):
     idx = data_index(data, index)
     total_probability = 0
@@ -165,8 +183,17 @@ def tc_total_probability(data, index):
         if not np.isnan(data.at[idx,'Prob'+str(ii)]):
             total_probability += data.at[idx,'Prob'+str(ii)]
     if not np.isnan(data.at[idx, 'NoDrop']):
-        total_probability += data.at[idx, 'NoDrop']
-    return total_probability
+        # print("tc {:s} has a total prob of {:d} and a NoDrop of{:d}".format(
+        #     data.at[idx, 'Treasure Class'], 
+        #     int(total_probability), 
+        #     int(data.at[idx, 'NoDrop'])))
+        total_probability += get_corrected_nodrop(data, idx, total_probability)
+        # print("tc {:s} now has a total total_probability of {:d}".format(
+        #     data.at[idx, 'Treasure Class'],
+        #     int(total_probability)))
+        return total_probability, get_corrected_nodrop(data, idx, total_probability)
+    else:
+        return total_probability, 0
 
 
 def tc_get_prob_dict(data, index, call_prob=1.):
@@ -174,9 +201,10 @@ def tc_get_prob_dict(data, index, call_prob=1.):
     prob_dict = {}
     picks = data.at[idx,'Picks']
     multiplier = 1.
-    total_prob = tc_total_probability(data, index)
-    if not np.isnan(data.at[idx, 'NoDrop']) and picks > 0:
-        prob_dict['NoDrop'] = data.at[idx, 'NoDrop']/total_prob*call_prob
+    total_prob, nodrop = tc_total_probability(data, index)
+    if nodrop > 0:
+        prob_dict['NoDrop'] = nodrop/total_prob*call_prob
+        # prob_dict['NoDrop'] = data.at[idx, 'NoDrop']/total_prob*call_prob
     for ii in range(1,11):
         tmp_mini_dict = {}
         if data.at[idx, 'Item'+str(ii)] == 'Nothing':
@@ -187,8 +215,6 @@ def tc_get_prob_dict(data, index, call_prob=1.):
                     tmp_mini_dict[data.at[idx, 'Item'+str(ii)]] = data.at[idx,'Prob'+str(ii)]/total_prob*call_prob*picks
                 elif picks < 0:
                     tmp_mini_dict[data.at[idx, 'Item'+str(ii)]] = 1.*call_prob
-                elif picks == 0:
-                    return {'NoDrop': 1.}
         prob_dict = merge_dicts(prob_dict, tmp_mini_dict)
     return prob_dict
 
@@ -211,24 +237,27 @@ def tc_unravel(prob_dict, data, diag_dict = False, tc_nam='None', call_prob=1.):
     return new_dict
 
 
-def wrap_monster_loop(item, data, names, code_to_name_dict, difficulty, type, tc):
+def wrap_monster_loop(item, data, names, code_to_name_dict, difficulty, mon_type, tc):
     if not item['Id'] == 'Expansion':
-        if (names['String Index'] == item['NameStr']).any() and not isinstance(item[tc], float):
-            try:
+        monster_name = names[names['String Index'] == item['NameStr']]['Text'].tolist()[0]
+        monster_id = item['Id']
+        tcs_identical = item['TreasureClass1'] == item['TreasureClass2'] == item['TreasureClass3']
+        if mon_type == '' or not tcs_identical:
+            if (names['String Index'] == item['NameStr']).any() and not isinstance(item[tc], float):
                 print("{:s} has name {:s} and TC {:s}".format(
                     item['Id'],
-                    names[names['String Index'] == item['NameStr']]['Text'].tolist()[0],
+                    monster_name,
                     item[tc]
                 ))
                 prob_dict = tc_get_prob_dict(data, item[tc])
                 totals = tc_unravel(prob_dict, data, diag_dict=False)
                 totals = split_weap_and_armo(totals)
-                print_results_to_txt(totals, code_to_name_dict, names[names['String Index'] == item['NameStr']]['Text'].tolist()[0] + type + difficulty + '.txt')
-            except:
-                print(item['Id'])
-                print(names[names['String Index'] == item['NameStr']]['Text'].tolist()[0])
-                print(item['TreasureClass1'])
-                exit()
+                print_results_to_txt(totals, code_to_name_dict, monster_name, monster_id + mon_type + difficulty + '.txt')
+        elif tcs_identical:
+            print("{:s} has three identical TCs, skipping for Champ and Unique type...".format(
+                monster_name))
+        else:
+            print("This should never happen!!!")
 
 
 def wrap_superunique_loop(item, data, names, code_to_name_dict, difficulty, tc):
@@ -257,10 +286,10 @@ def loop_over_monsters_and_uniques(data, monsters, uniques, names):
                    ['TreasureClass1(H)', 'TreasureClass2(H)', 'TreasureClass3(H)']]
     unique_tcs = ['TC', 'TC(N)', 'TC(H)']
     for dd, difficulty in enumerate(['','_N','_H']):
-        for tt, type in enumerate(['', '_champ', '_unique']):
-            Parallel(n_jobs=16)(delayed(wrap_monster_loop)(item, data, names, code_to_name_dict, difficulty, type, monster_tcs[dd][tt]) for _, item in monsters.iterrows())
-        if type == '_unique':
-            Parallel(n_jobs=16)(delayed(wrap_superunique_loop)(item, data, names, code_to_name_dict, difficulty, unique_tcs[dd]) for _, item in uniques.iterrows())
+        for tt, mon_type in enumerate(['', '_champ', '_unique']):
+            Parallel(n_jobs=4)(delayed(wrap_monster_loop)(item, data, names, code_to_name_dict, difficulty, mon_type, monster_tcs[dd][tt]) for _, item in monsters.iterrows())
+        if mon_type == '_unique':
+            Parallel(n_jobs=4)(delayed(wrap_superunique_loop)(item, data, names, code_to_name_dict, difficulty, unique_tcs[dd]) for _, item in uniques.iterrows())
 
 
 def main():
@@ -268,6 +297,9 @@ def main():
     uniques = read_unique_monsters()
     names = read_monster_names()
     data = read_TreasurClassEx()
+    for _, item in monsters.iterrows():
+        if item['TreasureClass1'] == item['TreasureClass2']:
+            print(item['Id'], item['NameStr'])
     loop_over_monsters_and_uniques(data, monsters, uniques, names)
 
 
