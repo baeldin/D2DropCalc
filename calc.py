@@ -107,20 +107,28 @@ def merge_dicts(dict_a, dict_b):
     return dict_a
 
 
-# def split_base_item_chances(base_dict):
-#     for key, value in base_dict:
-#         if 
+def split_base_item_chances(base_dict):
+    unique_and_set_dict = {}
+    for key, value in base_dict.items():
+        if (df_uniqueitems['code'] == key).any():
+            name = df_uniqueitems[df_uniqueitems['code'] == key]['index'].tolist()[0]
+            base_item = df_uniqueitems[df_uniqueitems['code'] == key]['*type'].tolist()[0]
+            uni_key "{:s} (Unique {:s})".format(name, base_item)
+        if (df_setitems['item'] == key).any():
+            name = df_setitems[df_setitems['item'] == key]['index'].tolist()[0]
+            base_item = df_setitems[df_setitems['item'] == key]['*item'].tolist()[0]
+            set_key "{:s} (Unique {:s})".format(name, base_item)
+
 
 def get_level_subdict(df, level, prob):
     sub_dict = {}
-    # print(df)
     df_select = df[
         (df['level'] >  level-3) & 
         (df['level'] <= level) &
         (df['spawnable'] == 1)]
     for index, item in df_select.iterrows():
         sub_dict[item['code']] = prob/len(df_select.index)
-        # print(sub_dict)
+    split_base_item_chances(sub_dict)
     return sub_dict
 
 
@@ -279,9 +287,9 @@ def loop_over_monsters_and_uniques():
     unique_tcs = ['TC', 'TC(N)', 'TC(H)']
     for dd, difficulty in enumerate(['','_N','_H']):
         for tt, mon_type in enumerate(['', '_champ', '_unique']):
-            Parallel(n_jobs=4)(delayed(wrap_monster_loop)(item, code_to_name_dict, difficulty, mon_type, monster_tcs[dd][tt]) for _, item in df_monstats.iterrows())
+            Parallel(n_jobs=1)(delayed(wrap_monster_loop)(item, code_to_name_dict, difficulty, mon_type, monster_tcs[dd][tt]) for _, item in df_monstats.iterrows())
         if mon_type == '_unique':
-            Parallel(n_jobs=4)(delayed(wrap_superunique_loop)(item, code_to_name_dict, difficulty, unique_tcs[dd]) for _, item in df_superuniques.iterrows())
+            Parallel(n_jobs=1)(delayed(wrap_superunique_loop)(item, code_to_name_dict, difficulty, unique_tcs[dd]) for _, item in df_superuniques.iterrows())
 
 
 def main():

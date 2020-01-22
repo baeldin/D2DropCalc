@@ -128,7 +128,6 @@ Horadric Staff	0	1		0	1	0	0	hst	Staff			5	5000								mana		10	10	res-pois		25	2
 Hell Forge Hammer	0	1		0	1	0	0	hfh	Hammer			5	5000								fire-min		5	5	fire-max		20	20	res-fire		40	40	ac		35	35																																	0
 KhalimFlail	0	1		0	1	0	0	qf1	Flail			5	5000								ltng-min		1	1	ltng-max		20	20	swing3		50	50	att		40	40																																	0
 SuperKhalimFlail	0	1		0	1	0	0	qf2	Flail			5	5000								ltng-min		1	1	ltng-max		40	40	swing3		50	50	att		40	40	manasteal		6	6	lifesteal		6	6																									0
-Expansion																																																																					0
 Coldkill	100	1		0	1	44	25	q00	Hatchet			5	5000								sock		2	2	tinkerflag2		25	35	dmg-cold	50	40	40	res-cold		15	15	res-cold-max		15	15	swing3		30	30	hit-skill	Ice Blast	10	10	gethit-skill	Frost Nova	10	5	dmg%		150	190													0
 Butcher's Pupil	100	1		0	1	47	27	q01	Cleaver			5	5000								sock		2	2	tinkerflag2		25	35	deadly		35	35	openwounds		25	25	dmg%		150	200	indestruct		1	1	swing3		30	30	dmg-norm		30	50																	0
 Islestrike	100	1		0	1	51	30	q02	Twin Axe			5	5000								sock		2	2	tinkerflag2		25	35	dru		2	2	str		10	10	dex		10	10	vit		10	10	enr		10	10	ac-miss		50	50	crush		25	25	dmg%		170	190	skill	Fury	1	1	skill	Maul	1	1	0
