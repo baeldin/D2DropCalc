@@ -1,8 +1,11 @@
 import pandas as pd
 import numpy as np
-import multiprocessing as mp
 from joblib import Parallel, delayed
 
+
+# debug prints
+print_set_details = True
+print_unique_details = True
 
 # read data from txt files and provide them as global variables
 with open('TreasureClassEx.txt','r') as f:
@@ -21,6 +24,8 @@ with open('UniqueItems.txt','r') as f:
     df_uniqueitems = pd.read_csv(f, sep='\t')
 with open('SetItems.txt','r') as f:
     df_setitems = pd.read_csv(f, sep='\t')
+with open('itemratio.txt','r') as f:
+    df_itemratio = pd.read_csv(f, sep='\t')
 with open('ES AlphA.txt','r') as f:
     strings1 = pd.read_csv(f, sep='\t')
 with open('expansionstring.txt','r') as f:
@@ -107,20 +112,99 @@ def merge_dicts(dict_a, dict_b):
     return dict_a
 
 
-def split_base_item_chances(base_dict):
+# def calculate_quality_chances(qlvl, ilvl, class_specific):
+#     for quality in ['Unique', 'Set', 'Rare']:
+#         base_chance = 
+
+
+def get_entry_from_item_dicts(item_code, entry_name):
+    if (df_weapons['code'] == item_code).any():
+        to_return =  df_weapons[df_weapons['code'] == item_code][entry_name].tolist()[0]
+    elif (df_armor['code'] == item_code).any():
+        to_return =  df_armor[df_armor['code'] == item_code][entry_name].tolist()[0]
+    elif (df_misc['code'] == item_code).any():
+        to_return =  df_misc[df_misc['code'] == item_code][entry_name].tolist()[0]
+    else:
+        return 0
+    return to_return
+
+def get_item_ratios(base_item_code, ilvl, qlvl, min_lvl):
+    if (df_weapons['code'] == base_item_code).any():
+        df_items = df_weapons
+    elif (df_armor['code'] == base_item_code).any():
+        df_items = df_armor
+    elif (df_misc['code'] == base_item_code).any():
+        df_items = df_misc
+    else:
+        print("I was called, but I don't know what to do :(")
+        return {}
+    # print(df_items[df_items['code'] == base_item_code])
+
+
+
+def check_unique_drops(item_code, base_qlvl, monster_level):
+    unique_list = []
+    unique_dict = {}
+    total_rarity = 0
+    for _, unique_item in df_uniqueitems[df_uniqueitems['code'] == item_code].iterrows():
+        name = unique_item['index']
+        base_item = unique_item['*type']
+        name_str = "{:s} (Unique {:s})".format(name, base_item)
+        special_qlvl = int(unique_item['lvl'])
+        rarity = unique_item['rarity']
+        if print_unique_details:
+            if special_qlvl <= monster_level:
+                print("\x1b[0;33;40m{:s} (Unique {:s}, ilvl = {:d}, base_qlvl = {:d}, unique_qlvl = {:d})\x1b[0m".format(name, base_item, monster_level, base_qlvl, special_qlvl))
+            else:
+                print("\x1b[1;37;41m{:s} (Unique {:s}, ilvl = {:d}, base_qlvl = {:d}, unique_qlvl = {:d})\x1b[0m".format(name, base_item, monster_level, base_qlvl, special_qlvl))
+        if special_qlvl <= monster_level:
+            unique_list.append([name_str, rarity])
+            total_rarity += rarity
+    if len(unique_list) > 0:
+        for unique in unique_list:
+            unique_dict[unique[0]] = unique[1]/total_rarity
+        if print_unique_details:
+            for key, value in unique_dict.items():
+                print("{:s}:\t{:8.6f}%".format(key,100*value))
+
+
+
+def check_set_drop(item_code, base_qlvl, monster_level):
+    set_list = []
+    set_dict = {}
+    total_rarity = 0
+    for _, set_item in df_setitems[df_setitems['item'] == item_code].iterrows():
+        name = set_item['index']
+        base_item = set_item['*item']
+        name_str = "{:s} (set {:s})".format(name, base_item)
+        special_qlvl = int(set_item['lvl'])
+        rarity = set_item['rarity']
+        if print_set_details:
+            if special_qlvl <= monster_level:
+                print("\x1b[0;32;40m{:s} (Set {:s}, ilvl = {:d}, base_qlvl = {:d}, set_qlvl = {:d})\x1b[0m".format(name, base_item, monster_level, base_qlvl, special_qlvl))
+            else:
+                print("\x1b[1;37;41m{:s} (Set {:s}, ilvl = {:d}, base_qlvl = {:d}, set_qlvl = {:d})\x1b[0m".format(name, base_item, monster_level, base_qlvl, special_qlvl))
+        if special_qlvl <= monster_level:
+            set_list.append([name_str, rarity])
+            total_rarity += rarity
+    if len(set_list) > 0:
+        for set in set_list:
+            set_dict[set[0]] = float(set[1])/total_rarity
+        if print_set_details:
+            for key, value in set_dict.items():
+                print("{:s}:\t{:8.6f}%".format(key,100*value))
+
+
+def split_base_item_chances(base_dict, monster_level):
     unique_and_set_dict = {}
     for key, value in base_dict.items():
-        if (df_uniqueitems['code'] == key).any():
-            name = df_uniqueitems[df_uniqueitems['code'] == key]['index'].tolist()[0]
-            base_item = df_uniqueitems[df_uniqueitems['code'] == key]['*type'].tolist()[0]
-            uni_key "{:s} (Unique {:s})".format(name, base_item)
-        if (df_setitems['item'] == key).any():
-            name = df_setitems[df_setitems['item'] == key]['index'].tolist()[0]
-            base_item = df_setitems[df_setitems['item'] == key]['*item'].tolist()[0]
-            set_key "{:s} (Unique {:s})".format(name, base_item)
+        base_qlvl = int(get_entry_from_item_dicts(key, 'level'))
+        check_unique_drops(key, base_qlvl, monster_level)
+        check_set_drop(key, base_qlvl, monster_level)
+        # get_item_ratios(key, monster_level, base_qlvl, special_qlvl)
 
 
-def get_level_subdict(df, level, prob):
+def get_level_subdict(df, level, prob, monster_level):
     sub_dict = {}
     df_select = df[
         (df['level'] >  level-3) & 
@@ -128,20 +212,19 @@ def get_level_subdict(df, level, prob):
         (df['spawnable'] == 1)]
     for index, item in df_select.iterrows():
         sub_dict[item['code']] = prob/len(df_select.index)
-    split_base_item_chances(sub_dict)
     return sub_dict
 
 
-def split_weap_and_armo(drop_dict):
+def split_weap_and_armo(drop_dict, monster_level):
     return_dict={}
     for key, value in drop_dict.items():
         if 'weap' in key:
             level = int(key.replace('weap',''))
-            split_dict = get_level_subdict(df_weapons, level, value)
+            split_dict = get_level_subdict(df_weapons, level, value, monster_level)
             return_dict = merge_dicts(return_dict, split_dict)
         elif 'armo' in key:
             level = int(key.replace('armo',''))
-            split_dict = get_level_subdict(df_armor, level, value)
+            split_dict = get_level_subdict(df_armor, level, value, monster_level)
             return_dict = merge_dicts(return_dict, split_dict)
         else:
             return_dict[key] = drop_dict[key]
@@ -242,17 +325,25 @@ def wrap_monster_loop(item, code_to_name_dict, difficulty, mon_type, tc):
     if not item['Id'] == 'Expansion':
         monster_name = df_strings[df_strings['String Index'] == item['NameStr']]['Text'].tolist()[0]
         monster_id = item['Id']
+        if difficulty == '':
+            monster_level = int(item['Level'])
+        elif difficulty == '_N':
+            monster_level = int(item['Level(N)'])
+        elif difficulty == '_H':
+            monster_level = int(item['Level(H)'])
         tcs_identical = item['TreasureClass1'] == item['TreasureClass2'] == item['TreasureClass3']
         if mon_type == '' or not tcs_identical:
             if (df_strings['String Index'] == item['NameStr']).any() and not isinstance(item[tc], float):
-                print("{:s} has name {:s} and TC {:s}".format(
+                print("{:s} has name {:s}, TC {:s}, and is level {:d}".format(
                     item['Id'],
                     monster_name,
-                    item[tc]
+                    item[tc],
+                    monster_level
                 ))
                 prob_dict = tc_get_prob_dict(item[tc])
                 totals = tc_unravel(prob_dict, diag_dict=False)
-                totals = split_weap_and_armo(totals)
+                totals = split_weap_and_armo(totals, monster_level)
+                split_base_item_chances(totals, monster_level)
                 print_results_to_txt(totals, code_to_name_dict, monster_name, monster_id + mon_type + difficulty + '.txt')
         elif tcs_identical:
             print("{:s} has three identical TCs, skipping for Champ and Unique type...".format(
@@ -274,29 +365,35 @@ def wrap_superunique_loop(item, code_to_name_dict, difficulty, tc):
             totals = split_weap_and_armo(totals)
             print_results_to_txt(totals, code_to_name_dict, df_strings[df_strings['String Index'] == item['Name']]['Text'].tolist()[0]+difficulty+'.txt')
 
-def loop_over_monsters_and_uniques():
+
+def loop_over_monsters_and_uniques(testing=False):
     """This function loops over all monsters from Monstats.txt, names them using
     the patch.txt and patchstring.txt
     Arguments:
         monsters ...... pandas dataframe
         names ......... pandas dataframe"""
     code_to_name_dict = read_item_lists()
-    monster_tcs = [['TreasureClass1',    'TreasureClass2',    'TreasureClass3'],
-                   ['TreasureClass1(N)', 'TreasureClass2(N)', 'TreasureClass3(N)'],
-                   ['TreasureClass1(H)', 'TreasureClass2(H)', 'TreasureClass3(H)']]
-    unique_tcs = ['TC', 'TC(N)', 'TC(H)']
-    for dd, difficulty in enumerate(['','_N','_H']):
-        for tt, mon_type in enumerate(['', '_champ', '_unique']):
-            Parallel(n_jobs=1)(delayed(wrap_monster_loop)(item, code_to_name_dict, difficulty, mon_type, monster_tcs[dd][tt]) for _, item in df_monstats.iterrows())
-        if mon_type == '_unique':
-            Parallel(n_jobs=1)(delayed(wrap_superunique_loop)(item, code_to_name_dict, difficulty, unique_tcs[dd]) for _, item in df_superuniques.iterrows())
+    if testing:
+        for _, item in df_monstats.iterrows():
+            wrap_monster_loop(item, code_to_name_dict, '_H', '', 'TreasureClass1(H)')
+            exit()
+    else:
+        monster_tcs = [['TreasureClass1',    'TreasureClass2',    'TreasureClass3'],
+                       ['TreasureClass1(N)', 'TreasureClass2(N)', 'TreasureClass3(N)'],
+                       ['TreasureClass1(H)', 'TreasureClass2(H)', 'TreasureClass3(H)']]
+        unique_tcs = ['TC', 'TC(N)', 'TC(H)']
+        for dd, difficulty in enumerate(['','_N','_H']):
+            for tt, mon_type in enumerate(['', '_champ', '_unique']):
+                Parallel(n_jobs=4)(delayed(wrap_monster_loop)(item, code_to_name_dict, difficulty, mon_type, monster_tcs[dd][tt]) for _, item in df_monstats.iterrows())
+            if mon_type == '_unique':
+                Parallel(n_jobs=4)(delayed(wrap_superunique_loop)(item, code_to_name_dict, difficulty, unique_tcs[dd]) for _, item in df_superuniques.iterrows())
 
 
 def main():
-    for _, item in df_monstats.iterrows():
-        if item['TreasureClass1'] == item['TreasureClass2']:
-            print(item['Id'], item['NameStr'])
-    loop_over_monsters_and_uniques()
+    # for _, item in df_monstats.iterrows():
+    #     if item['TreasureClass1'] == item['TreasureClass2']:
+    #         print(item['Id'], item['NameStr'])
+    loop_over_monsters_and_uniques(testing=True)
 
 
 if __name__ == '__main__':
