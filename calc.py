@@ -1,13 +1,13 @@
 import pandas as pd
 import numpy as np
 from joblib import Parallel, delayed, cpu_count
-
+import sqlite3
 
 # debug prints
 print_set_details = False
 print_unique_details = False
 
-mf = 0.
+mf = 0
 
 # read data from txt files and provide them as global variables
 with open('TreasureClassEx.txt','r') as f:
@@ -16,6 +16,8 @@ with open('MonStats.txt','r') as f:
     df_monstats = pd.read_csv(f, sep='\t')
 with open('SuperUniques.txt','r') as f:
     df_superuniques = pd.read_csv(f, sep='\t')
+with open('super_unique_info.txt','r') as f:
+    df_super_unique_info = pd.read_csv(f, sep='\t')
 with open('levels.txt','r') as f:
     df_levels = pd.read_csv(f, sep='\t')
 with open('weapons.txt','r') as f:
@@ -83,14 +85,18 @@ def convert_to_df(droplist):
     first = True
     for entry in droplist:
         if first:
-            df = pd.DataFrame.from_dict(entry)
+            df = pd.DataFrame.from_dict([entry])
+            first = False
         else:
             try:
-                df.append(pd.DataFrame.from_dict(entry))
+                df = df.append(pd.DataFrame.from_dict([entry]), ignore_index=True)
             except:
                 print("something went wrong...")
                 print(entry)
+    print(df)
     df.to_csv('test.csv')
+    conn = sqlite3.connect('TestDB1.db')
+    df.to_sql('test', conn, if_exists='replace', index=False)
 
 
 def print_results_to_txt(totals, code_to_name_dict, monster_name, filenam='out.txt'):
@@ -168,21 +174,24 @@ def get_line_from_item_ratio(base_item_code):
         df_itemratio['Version'] == 1][df_itemratio['Uber'] == is_uber][df_itemratio['Class Specific'] == is_class_specific]
 
 
-def get_quality_chance(base_item_code, ilvl, qlvl, quality='Unique'):
+def get_quality_chance(base_item_code, ilvl, qlvl, tc_quality_bonus, quality='Unique'):
     ratio_parameters = get_line_from_item_ratio(base_item_code)
     base = ratio_parameters[quality].tolist()[0]
     divisor = ratio_parameters[quality+'Divisor'].tolist()[0]
     quality_min = ratio_parameters[quality+'Min'].tolist()[0]
     base_chance = base - (ilvl - qlvl)/divisor
-    mod_chance = base_chance * 128
-    mod_chance_mf = 100 * mod_chance / (100 + mf)
+    mod_chance = base_chance * 128.
+    mod_chance_mf = 100. * mod_chance / (100. + mf)
     if mod_chance_mf < quality_min:
         mod_chance_mf = quality_min
-    final_chance = 128 / mod_chance_mf
-    return final_chance
+    mod_chance_mf = mod_chance_mf - mod_chance_mf*(tc_quality_bonus/1024.)
+    if mod_chance_mf < 128:
+        return 1.
+    else:
+        return 128. / mod_chance_mf
 
 
-def check_unique_drops(item_code, base_qlvl, monster_level):
+def check_unique_drops(item_code, base_qlvl, monster_level, tc_bonus):
     unique_list = []
     unique_dict = {}
     total_rarity = 0
@@ -205,7 +214,7 @@ def check_unique_drops(item_code, base_qlvl, monster_level):
         total_chance_of_unique = 0.
         for unique in unique_list:
             chance_of_this_unique = unique[1]/total_rarity * get_quality_chance(
-                item_code, monster_level, base_qlvl, quality='Unique')
+                item_code, monster_level, base_qlvl, tc_bonus[0], quality='Unique')
             unique_dict[unique[0]] = chance_of_this_unique
             total_chance_of_unique += chance_of_this_unique
         if print_unique_details:
@@ -215,7 +224,7 @@ def check_unique_drops(item_code, base_qlvl, monster_level):
     return unique_dict
 
 
-def check_set_drop(item_code, base_qlvl, monster_level):
+def check_set_drop(item_code, base_qlvl, monster_level, tc_bonus):
     set_list = []
     set_dict = {}
     total_rarity = 0
@@ -238,7 +247,7 @@ def check_set_drop(item_code, base_qlvl, monster_level):
         total_chance_of_set = 0.
         for set in set_list:
             chance_of_this_set = set[1] / total_rarity * get_quality_chance(
-                item_code, monster_level, base_qlvl, quality='Set')
+                item_code, monster_level, base_qlvl, tc_bonus[1], quality='Set')
             set_dict[set[0]] = chance_of_this_set
             total_chance_of_set += chance_of_this_set
         if print_set_details:
@@ -246,22 +255,29 @@ def check_set_drop(item_code, base_qlvl, monster_level):
                 print("{:s}:\t{:8.6f}%".format(key,100*value))
     return set_dict
 
-def split_base_item_chances(base_dict, monster_level):
+def split_base_item_chances(base_dict, monster_level, tc_bonus):
     for key, value in base_dict.items():
+        prob = value
         base_qlvl = int(get_entry_from_item_dicts(key, 'level'))
-        unique_dict = check_unique_drops(key, base_qlvl, monster_level)
+        unique_dict = check_unique_drops(key, base_qlvl, monster_level, tc_bonus)
         if len(unique_dict) > 0:
             for key_unique, value_unique in unique_dict.items():
-                unique_dict[key_unique] = value * value_unique
+                unique_dict[key_unique] = prob * value_unique
             base_dict = merge_dicts(base_dict, unique_dict)
-        set_dict = check_set_drop(key, base_qlvl, monster_level)
+        set_dict = check_set_drop(key, base_qlvl, monster_level, tc_bonus)
         if len(set_dict) > 0:
             for key_set, value_set in set_dict.items():
-                set_dict[key_set] = value * value_set
+                set_dict[key_set] = prob * value_set
             base_dict = merge_dicts(base_dict, set_dict)
     return base_dict
 
-def get_level_subdict(df, level, prob, monster_level):
+def get_level_subdict(df, level, prob, monster_level, tc_bonus):
+    # prob is of the form
+    # [
+    #   real prob,
+    #   [unique, set, rare, magic]
+    #
+    # where the list contains the bonus chances for item qualites from TCEx
     sub_dict = {}
     df_select = df[
         (df['level'] >  level-3) & 
@@ -269,22 +285,25 @@ def get_level_subdict(df, level, prob, monster_level):
         (df['spawnable'] == 1)]
     for index, item in df_select.iterrows():
         sub_dict[item['code']] = prob/len(df_select.index)
+        sub_dict=split_base_item_chances(sub_dict, monster_level, tc_bonus)
     return sub_dict
 
 
-def split_weap_and_armo(drop_dict, monster_level):
-    return_dict=drop_dict
-    for key, value in drop_dict.items():
-        if 'weap' in key:
-            level = int(key.replace('weap',''))
-            split_dict = get_level_subdict(df_weapons, level, value, monster_level)
-            return_dict = merge_dicts(return_dict, split_dict)
-        elif 'armo' in key:
-            level = int(key.replace('armo',''))
-            split_dict = get_level_subdict(df_armor, level, value, monster_level)
-            return_dict = merge_dicts(return_dict, split_dict)
-        # else:
-        #     return_dict[key] = drop_dict[key]
+def split_weap_and_armo(tc_nam, prob, monster_level, tc_bonus):
+    return_dict={}
+    if tc_nam[0:4] == 'weap':
+        # print("doing "+tc_nam)
+        level = int(tc_nam.replace('weap',''))
+        split_dict = get_level_subdict(df_weapons, level, prob, monster_level, tc_bonus)
+        return_dict = merge_dicts(return_dict, split_dict)
+        # return_dict = split_base_item_chances(return_dict, monster_level)
+    elif tc_nam[0:4] == 'armo':
+        level = int(tc_nam.replace('armo',''))
+        split_dict = get_level_subdict(df_armor, level, prob, monster_level, tc_bonus)
+        return_dict = merge_dicts(return_dict, split_dict)
+        # return_dict = split_base_item_chances(return_dict, monster_level)
+    # else:
+    #     return_dict[key] = drop_dict[key]
     return return_dict
 
 
@@ -342,40 +361,57 @@ def tc_total_probability(index):
         return total_probability, 0
 
 
-def tc_get_prob_dict(index, call_prob=1.):
+def tc_get_prob_dict(index, monster_level, call_prob=1., local_tc_bonus = [0,0,0,0]):
     idx = data_index(index)
     prob_dict = {}
     picks = df_treasureclassex.at[idx,'Picks']
     multiplier = 1.
     total_prob, nodrop = tc_total_probability(index)
+    for cc, col in enumerate(['Unique', 'Set', 'Rare', 'Magic']):
+        bonus = df_treasureclassex.at[idx, col]
+        if not np.isnan(bonus):
+            local_tc_bonus[cc] = int(bonus)
     if nodrop > 0:
         prob_dict['NoDrop'] = nodrop/total_prob*call_prob
     for ii in range(1,11):
         tmp_mini_dict = {}
         if df_treasureclassex.at[idx, 'Item'+str(ii)] == 'Nothing':
-            tmp_mini_dict = {'NoDrop': df_treasureclassex.at[idx,'Prob'+str(ii)]/total_prob*call_prob*picks}
+            tmp_mini_dict['Nothing'] = df_treasureclassex.at[idx,'Prob'+str(ii)]/total_prob*call_prob*picks
         else:
             if not np.isnan(df_treasureclassex.at[idx,'Prob'+str(ii)]):
-                if picks > 0:
-                    tmp_mini_dict[df_treasureclassex.at[idx, 'Item'+str(ii)]] = df_treasureclassex.at[idx,'Prob'+str(ii)]/total_prob*call_prob*picks
-                elif picks < 0:
-                    tmp_mini_dict[df_treasureclassex.at[idx, 'Item'+str(ii)]] = 1.*call_prob
+                tc_nam = df_treasureclassex.at[idx, 'Item' + str(ii)]
+                if tc_nam.startswith('weap') or tc_nam.startswith('armo'):
+                    tmp_mini_dict = merge_dicts(tmp_mini_dict,
+                                                split_weap_and_armo(tc_nam,
+                                                                    df_treasureclassex.at[idx, 'Prob' + str(
+                                                                        ii)] / total_prob * call_prob * picks,
+                                                                    monster_level,
+                                                                    local_tc_bonus))
+                else:
+                    if picks > 0:
+                        tmp_mini_dict[tc_nam] = df_treasureclassex.at[
+                            idx,'Prob'+str(ii)]/total_prob*call_prob*picks
+                    elif picks < 0:
+                        tmp_mini_dict[tc_nam] = 1.*call_prob
         prob_dict = merge_dicts(prob_dict, tmp_mini_dict)
-    return prob_dict
+    return prob_dict, local_tc_bonus
 
 
-def tc_unravel(prob_dict, diag_dict = False, tc_nam='None', call_prob=1.):
+def tc_unravel(prob_dict, monster_level, diag_dict = False, tc_nam='None', call_prob=1., tc_bonus=[0,0,0,0], recursion_level=0):
+    recursion_level += 1
+    recursion_string = recursion_level*"   "
     new_dict = {}
     for tc_to_check, prob in prob_dict.items():
         if (df_treasureclassex['Treasure Class'] == tc_to_check).any():
-            tmp_dict = tc_unravel(tc_get_prob_dict(tc_to_check, call_prob=prob), diag_dict=diag_dict, tc_nam=tc_to_check, call_prob=prob)
+            tmp_prob_dict, tmp_tc_bonus = tc_get_prob_dict(tc_to_check, monster_level, call_prob=prob, local_tc_bonus=tc_bonus[:])
+            tmp_dict = tc_unravel(tmp_prob_dict, monster_level, diag_dict=diag_dict, tc_nam=tc_to_check, call_prob=prob, tc_bonus=tmp_tc_bonus, recursion_level=recursion_level)
             if tmp_dict is not None:
                 new_dict = merge_dicts(new_dict, tmp_dict)
         else:
             new_dict = merge_dicts(new_dict, {tc_to_check: prob})
     if diag_dict:
         diag_dict_print(new_dict, prob_dict, call_prob, tc_nam)
-    return new_dict
+    return new_dict #, tc_bonus
 
 
 def wrap_monster_loop(monster, area_name, monster_level,  code_to_name_dict, difficulty, mon_type, tc):
@@ -391,10 +427,10 @@ def wrap_monster_loop(monster, area_name, monster_level,  code_to_name_dict, dif
                     monster[tc],
                     monster_level
                 ))
-                prob_dict = tc_get_prob_dict(monster[tc])
-                totals = tc_unravel(prob_dict, diag_dict=False)
-                totals = split_weap_and_armo(totals, monster_level)
-                totals = split_base_item_chances(totals, monster_level)
+                prob_dict, tc_bonus = tc_get_prob_dict(monster[tc], monster_level)
+                totals = tc_unravel(prob_dict, monster_level, tc_bonus=tc_bonus, diag_dict=False)
+                # totals = split_weap_and_armo(totals, monster_level)
+                # totals = split_base_item_chances(totals, monster_level)
                 named_results = {}
                 for key, value in totals.items():
                     try:
@@ -419,18 +455,19 @@ def wrap_monster_loop(monster, area_name, monster_level,  code_to_name_dict, dif
         else:
             print("This should never happen!!!")
 
-def wrap_superunique_loop(item, code_to_name_dict, difficulty, tc):
-    if not item['Superunique'] == 'Expansion':
-        if (df_strings['String Index'] == item['Name']).any() and not isinstance(item[tc], float):
+def wrap_superunique_loop(monster, area_name, monster_level, code_to_name_dict, difficulty, mon_type, tc):
+    monster_name = df_strings[df_strings['String Index'] == monster['Superunique']]['Text'].tolist()[0]
+    if not monster['Superunique'] == 'Expansion':
+        if (df_strings['String Index'] == monster['Name']).any() and not isinstance(monster[tc], float):
             print("{:s} has name {:s} and TC {:s}".format(
-                item['Superunique'],
-                df_strings[df_strings['String Index'] == item['Name']]['Text'].tolist()[0],
-                item[tc]
+                monster['Superunique'],
+                df_strings[df_strings['String Index'] == monster['Name']]['Text'].tolist()[0],
+                monster[tc]
             ))
-            prob_dict = tc_get_prob_dict(df_treasureclassex, item[tc])
-            totals = tc_unravel(prob_dict, df_treasureclassex, diag_dict=False)
-            totals = split_weap_and_armo(totals, monster_level)
-            totals = split_base_item_chances(totals, monster_level)
+            prob_dict, tc_bonus = tc_get_prob_dict(monster[tc], monster_level)
+            totals = tc_unravel(prob_dict, monster_level, tc_bonus=tc_bonus, diag_dict=False)
+            # totals = split_weap_and_armo(totals, monster_level, tc_bonus=tc_bonus)
+            # totals = split_base_item_chances(totals, monster_level)
             named_results = {}
             for key, value in totals.items():
                 try:
@@ -440,13 +477,14 @@ def wrap_superunique_loop(item, code_to_name_dict, difficulty, tc):
             named_results['001_Monster'] = monster_name
             named_results['002_AreaName'] = df_strings[df_strings['String Index'] == area_name]['Text'].tolist()[0]
             difficulties = {'': 'normal', '_N': 'nightmare', '_H': 'hell'}
-            types = {'': '', '_champ': 'Champion', '_minion': 'Minion', '_unique': 'Unique'}
-            level_bonus = {'': 0, '_champ': 2, '_minion': 3, '_unique': 3}
-            named_results['005_MonsterLevel'] = monster_level + level_bonus[mon_type]
+            # types = {'': '', '_champ': 'Champion', '_minion': 'Minion', '_unique': 'Unique'}
+            # level_bonus = {'': 0, '_champ': 2, '_minion': 3, '_unique': 3}
+            named_results['005_MonsterLevel'] = monster_level
             named_results['003_Difficulty'] = difficulties[difficulty]
-            named_results['004_MonType'] = types[mon_type]
+            named_results['004_MonType'] = 'Super Unique'
             return named_results
-            print_results_to_txt(totals, code_to_name_dict, df_strings[df_strings['String Index'] == item['Name']]['Text'].tolist()[0]+difficulty+'.txt')
+            # print_results_to_txt(totals, code_to_name_dict, df_strings[df_strings['String Index'] == item['Name']]['Text'].tolist()[0]+difficulty+'.txt')
+
 
 
 def prepare_monster_loop():
@@ -482,6 +520,30 @@ def prepare_monster_loop():
     return monster_list
 
 
+def prepare_super_unique_loop():
+    super_unique_list =[]
+    code_to_name_dict = read_item_lists()
+    monster_tcs = ['TC','TC(N)','TC(H)']
+    level_columns = ['MonLvl1Ex', 'MonLvl2Ex', 'MonLvl3Ex']
+    for dd, difficulty in enumerate(['','_N','_H']):
+        for _, super_unique in df_superuniques.iterrows():
+            if (df_strings['String Index'] == super_unique['Superunique']).any() and\
+                    not isinstance(super_unique[monster_tcs[dd]], float) and\
+                    (df_super_unique_info['Superunique'] == super_unique['Superunique']).any():
+                # monster = df_superuniques['Superunique']
+                super_unique_name = df_super_unique_info['Superunique']
+                area_name = df_super_unique_info[df_super_unique_info['Superunique']==super_unique['Superunique']]['area'].tolist()[0]
+                monster_level = int(df_super_unique_info[df_super_unique_info['Superunique']==super_unique['Superunique']][level_columns[dd]].tolist()[0]+3)
+                mon_type = ''
+                print("Working on {:s}, the level in {:s} in levels.txt is {:d}".format(
+                    super_unique['Superunique'],
+                    area_name,
+                    int(monster_level)))
+                super_unique_list.append([super_unique, area_name, monster_level, code_to_name_dict,
+                                          difficulty, mon_type, monster_tcs[dd]])
+    return super_unique_list
+
+
 def loop_over_monsters_and_uniques(testing=False):
     """This function loops over all monsters from Monstats.txt, names them using
     the patch.txt and patchstring.txt
@@ -496,16 +558,26 @@ def loop_over_monsters_and_uniques(testing=False):
             exit()
     else:
         monster_list = prepare_monster_loop()
+        super_unique_list = prepare_super_unique_loop()
         result_list = []
+        result_list_superuniques = []
         jobs = max(cpu_count() - 4, 2)
         # jobs = 1
-        result_list.append(Parallel(n_jobs=jobs)(
-            delayed(wrap_monster_loop)(*monster) for monster in monster_list))
-        # for difficulty in ['', '_N', '_H']:
+        result_list = Parallel(n_jobs=jobs)(
+            delayed(wrap_monster_loop)(*monster) for monster in monster_list)
+        result_list_superuniques = Parallel(n_jobs=jobs)(
+            delayed(wrap_superunique_loop)(*monster) for monster in super_unique_list)
+
+        # for monster in super_unique_list:
+        #     result_list.append(wrap_superunique_loop(*monster))
+        #     exit()
+
+    # for difficulty in ['', '_N', '_H']:
         #     result_list.append(Parallel(n_jobs=jobs)(
         #         delayed(wrap_superunique_loop)(item, code_to_name_dict, difficulty, unique_tcs[dd]) for _, item
         #         in df_superuniques.iterrows()))
-    convert_to_df(result_list)
+    full_list = result_list + result_list_superuniques
+    convert_to_df(full_list)
 
 
 def main():
